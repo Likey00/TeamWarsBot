@@ -22,6 +22,9 @@ class AdminCog(commands.Cog):
 
         config['tourney'] = code
         config['captains'] = {}
+        config['idToName'] = {}
+        config['nameToMatch'] = {}
+        config['eliminated'] = []
 
         with open('config.json', 'w') as f:
             json.dump(config, f)
@@ -42,15 +45,17 @@ class AdminCog(commands.Cog):
             return
 
         participant_id = config['captains'][team][1]
+        base_url = f'https://{config["username"]}:{config["apiKey"]}@api.challonge.com/v1/tournaments'
 
         try:
-            async with self._session.delete(f'https://{config["username"]}:{config["apiKey"]}@api.challonge.com/v1/tournaments/{config["tourney"]}/participants/{participant_id}.json') as resp:
+            async with self._session.delete(f'{base_url}/{config["tourney"]}/participants/{participant_id}.json') as resp:
                 pass
         except:
             await ctx.send("Sorry, something went wrong! Try again")
             return
 
         config['captains'].pop(team)
+        config['idToName'].pop(str(participant_id))
 
         with open('config.json', 'w') as f:
             json.dump(config, f)
@@ -64,8 +69,10 @@ class AdminCog(commands.Cog):
         with open('config.json', 'r') as f:
             config = json.load(f)
 
+        base_url = f'https://{config["username"]}:{config["apiKey"]}@api.challonge.com/v1/tournaments'
+
         try:
-            async with self._session.post(f'https://{config["username"]}:{config["apiKey"]}@api.challonge.com/v1/tournaments/{config["tourney"]}/start.json') as resp:
+            async with self._session.post(f'{base_url}/{config["tourney"]}/start.json') as resp:
                 pass
         except:
             await ctx.send("Sorry, something went wrong! Try again")
@@ -79,9 +86,11 @@ class AdminCog(commands.Cog):
         """Resets the tournament"""
         with open('config.json', 'r') as f:
             config = json.load(f)
+
+        base_url = f'https://{config["username"]}:{config["apiKey"]}@api.challonge.com/v1/tournaments'
         
         try:
-            async with self._session.post(f'https://{config["username"]}:{config["apiKey"]}@api.challonge.com/v1/tournaments/{config["tourney"]}/reset.json') as resp:
+            async with self._session.post(f'{base_url}/{config["tourney"]}/reset.json') as resp:
                 pass
         except:
             await ctx.send("Sorry, something went wrong! Try again")
@@ -89,6 +98,56 @@ class AdminCog(commands.Cog):
 
         await ctx.send("Tournament reset!")
 
+
+    @commands.command()
+    @commands.has_role("Bot Commander")
+    async def make_matches(self, ctx):
+        """Outputs all the initial matches"""
+        with open('config.json', 'r') as f:
+            config = json.load(f)
+
+        if 'nameToMatch' not in config:
+            config['nameToMatch'] = {}
+
+        base_url = f'https://{config["username"]}:{config["apiKey"]}@api.challonge.com/v1/tournaments'
+
+        async with self._session.get(f'{base_url}/{config["tourney"]}/matches.json') as resp:
+            resp_json = await resp.json()
+
+            for entry in resp_json:
+                if entry["match"]["state"] != "open":
+                    continue
+
+                team1_id = str(entry["match"]["player1_id"])
+                team2_id = str(entry["match"]["player2_id"])
+                team1 = config['idToName'][team1_id]
+                team2 = config['idToName'][team2_id]
+
+                config['nameToMatch'][team1] = entry["match"]["id"]
+                config['nameToMatch'][team2] = entry["match"]["id"]
+
+                cap1 = self.bot.get_user(int(config['captains'][team1][0]))
+                cap2 = self.bot.get_user(int(config['captains'][team2][0]))
+                    
+                await ctx.send(f'{team1} ({cap1.mention}) vs {team2} ({cap2.mention})')
+
+
+        with open('config.json', 'w') as f:
+            json.dump(config, f)
+
+    @commands.command()
+    @commands.has_role("Bot Commander")
+    async def set_match_channel(self, ctx, channel_name):
+        """Sets up the channel where matches are announced given channel name"""
+        with open('config.json', 'r') as f:
+            config = json.load(f)
+
+        config['channel'] = channel_name
+
+        with open('config.json', 'w') as f:
+            json.dump(config, f)
+
+        await ctx.send("Successfully updated match channel!")
 
 def setup(bot):
     bot.add_cog(AdminCog(bot))
